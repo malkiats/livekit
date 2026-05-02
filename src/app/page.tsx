@@ -3,54 +3,44 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 
-const LiveVideo = dynamic(() => import("@/components/LiveVideo"), {
+const ChatRoom = dynamic(() => import("@/components/ChatRoom"), {
   ssr: false,
 });
+
+interface UserInfo {
+  name: string;
+  country: string;
+  age: number;
+}
 
 export default function Home() {
   const [name, setName] = useState("");
   const [country, setCountry] = useState("");
   const [age, setAge] = useState("");
-  const [token, setToken] = useState("");
-  const [connecting, setConnecting] = useState(false);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [error, setError] = useState("");
 
   const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || "";
 
-  async function handleConnect(e: React.FormEvent) {
+  function handleConnect(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    setConnecting(true);
 
-    try {
-      const res = await fetch("/api/get-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, country, age: parseInt(age) }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to get token");
-      }
-
-      const data = await res.json();
-      setToken(data.token);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setConnecting(false);
+    const ageNum = parseInt(age);
+    if (isNaN(ageNum) || ageNum < 18) {
+      setError("You must be 18 or older");
+      return;
     }
+
+    setUserInfo({ name: name.trim(), country: country.trim(), age: ageNum });
   }
 
-  if (token) {
+  if (userInfo) {
     return (
-      <LiveVideo
-        token={token}
+      <ChatRoom
+        userInfo={userInfo}
         serverUrl={serverUrl}
-        onDisconnected={() => {
-          setToken("");
-          setConnecting(false);
-        }}
+        onStop={() => setUserInfo(null)}
       />
     );
   }
@@ -109,10 +99,9 @@ export default function Home() {
 
           <button
             type="submit"
-            disabled={connecting}
-            className="w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 font-semibold transition"
+            className="w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold transition cursor-pointer"
           >
-            {connecting ? "Connecting..." : "Connect"}
+            Connect
           </button>
         </form>
       </div>

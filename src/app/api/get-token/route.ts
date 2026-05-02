@@ -3,11 +3,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 
 export async function POST(req: NextRequest) {
-  const { name, country, age } = await req.json();
+  const { name, country, age, excludeRoom } = await req.json();
 
   if (!name || !country || !age) {
     return NextResponse.json(
       { error: "Name, country, and age are required" },
+      { status: 400 }
+    );
+  }
+
+  if (typeof age !== "number" || age < 18) {
+    return NextResponse.json(
+      { error: "You must be 18 or older" },
       { status: 400 }
     );
   }
@@ -30,7 +37,10 @@ export async function POST(req: NextRequest) {
   try {
     const rooms = await roomService.listRooms();
     const waitingRoom = rooms.find(
-      (room) => room.numParticipants === 1 && room.maxParticipants === 2
+      (room) =>
+        room.numParticipants === 1 &&
+        room.name.startsWith("room-") &&
+        room.name !== excludeRoom
     );
 
     if (waitingRoom) {
@@ -55,6 +65,7 @@ export async function POST(req: NextRequest) {
     room: roomName,
     canPublish: true,
     canSubscribe: true,
+    canPublishData: true,
   });
 
   const jwt = await token.toJwt();
