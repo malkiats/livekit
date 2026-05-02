@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import LiveMatchStatus from "@/components/LiveMatchStatus";
+import { getCountryFlag } from "@/lib/countries";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -8,6 +10,7 @@ import {
   useTracks,
   VideoTrack,
   useChat,
+  useLocalParticipant,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
@@ -32,17 +35,151 @@ interface ChatMsg {
   isLocal: boolean;
 }
 
+type ConnectionBadgeState = "searching" | "connected" | "disconnected";
+
+interface MediaControlsRef {
+  setMicrophoneEnabled: (enabled: boolean) => Promise<void>;
+  setCameraEnabled: (enabled: boolean) => Promise<void>;
+}
+
+function ParticipantBadge({
+  label,
+  name,
+  age,
+  country,
+  align = "left",
+}: {
+  label: string;
+  name: string;
+  age: number | string;
+  country: string;
+  align?: "left" | "right";
+}) {
+  const isRightAligned = align === "right";
+  const flag = getCountryFlag(country);
+
+  return (
+    <div
+      className={`absolute bottom-3 z-10 max-w-[calc(100%-1.5rem)] rounded-2xl border border-white/10 bg-black/72 px-4 py-3 shadow-lg backdrop-blur-md ${
+        isRightAligned ? "right-3 text-right" : "left-3"
+      }`}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200/90">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-semibold text-white">{name}</p>
+      <div className={`mt-2 flex flex-wrap gap-2 ${isRightAligned ? "justify-end" : "justify-start"}`}>
+        <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-200">
+          Age {age}
+        </span>
+        <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-200">
+          <span className="mr-1.5">{flag}</span>
+          {country}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ConnectionStatusBadge({
+  status,
+  detail,
+}: {
+  status: ConnectionBadgeState;
+  detail: string;
+}) {
+  const styles = {
+    searching: {
+      label: "🟡 Searching",
+      className: "border-yellow-400/25 bg-yellow-400/10 text-yellow-100",
+      detailClassName: "text-yellow-100/75",
+    },
+    connected: {
+      label: "🟢 Connected",
+      className: "border-emerald-400/25 bg-emerald-400/10 text-emerald-100",
+      detailClassName: "text-emerald-100/75",
+    },
+    disconnected: {
+      label: "🔴 Disconnected",
+      className: "border-red-400/25 bg-red-400/10 text-red-100",
+      detailClassName: "text-red-100/75",
+    },
+  } satisfies Record<
+    ConnectionBadgeState,
+    { label: string; className: string; detailClassName: string }
+  >;
+
+  const config = styles[status];
+
+  return (
+    <div
+      className={`rounded-2xl border px-4 py-2.5 text-right shadow-lg backdrop-blur-md ${config.className}`}
+    >
+      <p className="text-sm font-semibold tracking-[0.08em] uppercase">{config.label}</p>
+      <p className={`mt-1 text-xs ${config.detailClassName}`}>{detail}</p>
+    </div>
+  );
+}
+
+function playConnectedChime() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const AudioContextCtor = window.AudioContext || (window as typeof window & {
+    webkitAudioContext?: typeof AudioContext;
+  }).webkitAudioContext;
+
+  if (!AudioContextCtor) {
+    return;
+  }
+
+  const audioContext = new AudioContextCtor();
+  const gainNode = audioContext.createGain();
+  gainNode.connect(audioContext.destination);
+  gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+
+  const notes = [523.25, 659.25];
+  notes.forEach((frequency, index) => {
+    const oscillator = audioContext.createOscillator();
+    const noteStart = audioContext.currentTime + index * 0.12;
+    const noteEnd = noteStart + 0.28;
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(frequency, noteStart);
+    oscillator.connect(gainNode);
+
+    gainNode.gain.linearRampToValueAtTime(0.035, noteStart + 0.04);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, noteEnd);
+
+    oscillator.start(noteStart);
+    oscillator.stop(noteEnd);
+  });
+
+  window.setTimeout(() => {
+    void audioContext.close().catch(() => {
+      // Ignore teardown failures for short-lived cue audio.
+    });
+  }, 700);
+}
+
 export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps) {
   const [token, setToken] = useState("");
   const [matchState, setMatchState] = useState<MatchState>("searching");
   const [error, setError] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
+  const [searchSeconds, setSearchSeconds] = useState(0);
+  const [isMicrophoneEnabled, setIsMicrophoneEnabled] = useState(true);
+  const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+  const [showConnectedCue, setShowConnectedCue] = useState(false);
   const excludeRoomRef = useRef("");
   const searchingRef = useRef(false);
   const mountedRef = useRef(false);
+  const wasConnectedRef = useRef(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const sendChatRef = useRef<((msg: string) => Promise<void>) | null>(null);
+  const mediaControlsRef = useRef<MediaControlsRef | null>(null);
 
   // Start local camera independently — never tears down on match changes
   useEffect(() => {
@@ -66,10 +203,32 @@ export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps)
     };
   }, []);
 
+  useEffect(() => {
+    localStreamRef.current?.getVideoTracks().forEach((track) => {
+      track.enabled = isCameraEnabled;
+    });
+  }, [isCameraEnabled]);
+
+  useEffect(() => {
+    if (matchState !== "searching") {
+      setSearchSeconds(0);
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setSearchSeconds((current) => current + 1);
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [matchState, token]);
+
   const findMatch = useCallback(async () => {
     if (searchingRef.current) return;
     searchingRef.current = true;
     setMatchState("searching");
+    setSearchSeconds(0);
     setError("");
     setToken("");
     setChatMessages([]);
@@ -133,23 +292,114 @@ export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps)
     }
   }, []);
 
+  const handleMediaStateChange = useCallback(
+    ({
+      isMicrophoneEnabled: nextMicState,
+      isCameraEnabled: nextCameraState,
+    }: {
+      isMicrophoneEnabled: boolean;
+      isCameraEnabled: boolean;
+    }) => {
+      setIsMicrophoneEnabled(nextMicState);
+      setIsCameraEnabled(nextCameraState);
+    },
+    []
+  );
+
+  const handleToggleMicrophone = useCallback(async () => {
+    const nextState = !isMicrophoneEnabled;
+    setIsMicrophoneEnabled(nextState);
+
+    if (!mediaControlsRef.current) {
+      return;
+    }
+
+    try {
+      await mediaControlsRef.current.setMicrophoneEnabled(nextState);
+    } catch {
+      setIsMicrophoneEnabled(!nextState);
+      setError("Could not update microphone state");
+    }
+  }, [isMicrophoneEnabled]);
+
+  const handleToggleCamera = useCallback(async () => {
+    const nextState = !isCameraEnabled;
+    setIsCameraEnabled(nextState);
+
+    if (!mediaControlsRef.current) {
+      return;
+    }
+
+    try {
+      await mediaControlsRef.current.setCameraEnabled(nextState);
+    } catch {
+      setIsCameraEnabled(!nextState);
+      setError("Could not update camera state");
+    }
+  }, [isCameraEnabled]);
+
   const isConnected = matchState === "connected";
+  const headerStatus: ConnectionBadgeState = error
+    ? "disconnected"
+    : isConnected
+      ? "connected"
+      : "searching";
+  const headerDetail = error
+    ? error
+    : isConnected
+      ? "You are now in a live conversation"
+      : `Searching for ${searchSeconds}s...`;
+
+  useEffect(() => {
+    let timeoutId: number | undefined;
+
+    if (isConnected && !wasConnectedRef.current) {
+      playConnectedChime();
+      setShowConnectedCue(true);
+      timeoutId = window.setTimeout(() => {
+        setShowConnectedCue(false);
+      }, 2200);
+    }
+
+    if (!isConnected) {
+      setShowConnectedCue(false);
+    }
+
+    wasConnectedRef.current = isConnected;
+
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isConnected]);
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-white">
-      {/* Header — always stable */}
-      <header className="flex items-center justify-between px-4 py-3 bg-gray-900/80 border-b border-gray-800 shrink-0">
-        <h1 className="text-lg font-bold">VideoLiveChat.live</h1>
-        <div className="flex items-center gap-2">
-          <span
-            className={`inline-block w-2.5 h-2.5 rounded-full ${
-              isConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse"
-            }`}
-          />
-          <span className="text-sm text-gray-400">
-            {isConnected ? "Connected" : "Searching..."}
-          </span>
+      {showConnectedCue && (
+        <div className="pointer-events-none fixed left-1/2 top-24 z-50 -translate-x-1/2">
+          <div className="rounded-full border border-emerald-400/35 bg-emerald-400/12 px-5 py-3 shadow-2xl shadow-emerald-950/40 backdrop-blur-xl animate-pulse">
+            <p className="text-sm font-semibold text-emerald-100">Connected to a new person</p>
+            <p className="mt-1 text-xs text-emerald-100/80">Your match is live now</p>
+          </div>
         </div>
+      )}
+
+      {/* Header — always stable */}
+      <header className="flex items-center justify-between gap-4 px-4 py-3 bg-gray-900/80 border-b border-gray-800 shrink-0">
+        <div className="min-w-0">
+          <p className="text-lg font-bold text-white">VideoLiveChat.live</p>
+          <p className="text-xs text-slate-400">Instant anonymous video chat</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-200">
+              18+ only
+            </span>
+            <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200">
+              Stay respectful
+            </span>
+          </div>
+        </div>
+        <ConnectionStatusBadge status={headerStatus} detail={headerDetail} />
       </header>
 
       {/* Main content */}
@@ -166,12 +416,20 @@ export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps)
                 muted
                 className="w-full h-full object-cover"
               />
-              <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-                <p className="text-xs text-white font-medium">You</p>
-                <p className="text-xs text-gray-300">
-                  {userInfo.name} · {userInfo.age} · {userInfo.country}
-                </p>
-              </div>
+              {!isCameraEnabled && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center">
+                    <p className="text-lg">📷</p>
+                    <p className="mt-1 text-sm font-medium text-white">Camera is off</p>
+                  </div>
+                </div>
+              )}
+              <ParticipantBadge
+                label="You"
+                name={userInfo.name}
+                age={userInfo.age}
+                country={userInfo.country}
+              />
             </div>
 
             {/* Remote video — only this panel refreshes on match */}
@@ -182,8 +440,8 @@ export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps)
                   token={token}
                   serverUrl={serverUrl}
                   connect={true}
-                  video={true}
-                  audio={true}
+                  video={isCameraEnabled}
+                  audio={isMicrophoneEnabled}
                   onDisconnected={() => {
                     if (matchState === "connected") {
                       findMatch();
@@ -197,28 +455,59 @@ export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps)
                     onNext={handleNext}
                     onChatMessage={handleChatMessage}
                     sendChatRef={sendChatRef}
+                    searchSeconds={searchSeconds}
+                    mediaControlsRef={mediaControlsRef}
+                    onMediaStateChange={handleMediaStateChange}
                   />
                   <RoomAudioRenderer />
                 </LiveKitRoom>
               ) : (
-                <SearchingOverlay error={error} onRetry={findMatch} />
+                <SearchingOverlay error={error} onRetry={findMatch} searchSeconds={searchSeconds} />
               )}
             </div>
           </div>
 
+          <div className="px-2 pb-2">
+            <LiveMatchStatus mode={isConnected ? "connected" : "searching"} secondsWaiting={searchSeconds} />
+          </div>
+
           {/* Controls — always visible */}
-          <div className="flex items-center justify-center gap-3 px-4 py-3 shrink-0">
+          <div className="flex flex-wrap items-center justify-center gap-3 px-4 py-3 shrink-0">
             <button
+              type="button"
+              onClick={handleToggleMicrophone}
+              className={`min-w-36 rounded-xl px-5 py-3 text-sm font-semibold transition cursor-pointer ${
+                isMicrophoneEnabled
+                  ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                  : "bg-slate-800 text-slate-100 hover:bg-slate-700"
+              }`}
+            >
+              {isMicrophoneEnabled ? "🎤 Mute" : "🎤 Unmute"}
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleCamera}
+              className={`min-w-36 rounded-xl px-5 py-3 text-sm font-semibold transition cursor-pointer ${
+                isCameraEnabled
+                  ? "bg-violet-600 text-white hover:bg-violet-500"
+                  : "bg-slate-800 text-slate-100 hover:bg-slate-700"
+              }`}
+            >
+              {isCameraEnabled ? "📷 Camera Off" : "📷 Camera On"}
+            </button>
+            <button
+              type="button"
               onClick={handleNext}
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold text-white text-sm transition cursor-pointer"
+              className="min-w-32 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 cursor-pointer"
             >
               ⏭ Next
             </button>
             <button
+              type="button"
               onClick={handleStop}
-              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 rounded-lg font-semibold text-white text-sm transition cursor-pointer"
+              className="min-w-32 rounded-xl bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-500 cursor-pointer"
             >
-              ■ Stop
+              ⏹ Stop
             </button>
           </div>
         </div>
@@ -236,12 +525,20 @@ export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps)
 
 /* ─── Searching Overlay (no token yet) ─── */
 
-function SearchingOverlay({ error, onRetry }: { error: string; onRetry: () => void }) {
+function SearchingOverlay({
+  error,
+  onRetry,
+  searchSeconds,
+}: {
+  error: string;
+  onRetry: () => void;
+  searchSeconds: number;
+}) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-      <div className="text-center space-y-3">
+    <div className="absolute inset-0 flex items-center justify-center bg-slate-950/70 p-4 text-gray-500 backdrop-blur-sm">
+      <div className="w-full max-w-md text-center space-y-4">
         <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mx-auto" />
-        <p className="text-sm">Looking for someone...</p>
+        <LiveMatchStatus mode="searching" secondsWaiting={searchSeconds} />
         {error && (
           <div className="space-y-2">
             <p className="text-red-400 text-xs">{error}</p>
@@ -266,12 +563,28 @@ interface RoomInnerProps {
   onNext: () => void;
   onChatMessage: (msg: ChatMsg) => void;
   sendChatRef: React.MutableRefObject<((msg: string) => Promise<void>) | null>;
+  searchSeconds: number;
+  mediaControlsRef: React.MutableRefObject<MediaControlsRef | null>;
+  onMediaStateChange: (state: {
+    isMicrophoneEnabled: boolean;
+    isCameraEnabled: boolean;
+  }) => void;
 }
 
-function RoomInner({ matchState, setMatchState, onNext, onChatMessage, sendChatRef }: RoomInnerProps) {
+function RoomInner({
+  matchState,
+  setMatchState,
+  onNext,
+  onChatMessage,
+  sendChatRef,
+  searchSeconds,
+  mediaControlsRef,
+  onMediaStateChange,
+}: RoomInnerProps) {
   const remoteParticipants = useRemoteParticipants();
   const tracks = useTracks([Track.Source.Camera]);
   const { send, chatMessages } = useChat();
+  const { localParticipant } = useLocalParticipant();
   const prevRemoteCountRef = useRef(0);
   const processedMsgCountRef = useRef(0);
 
@@ -286,6 +599,26 @@ function RoomInner({ matchState, setMatchState, onNext, onChatMessage, sendChatR
       sendChatRef.current = null;
     };
   }, [send, sendChatRef]);
+
+  useEffect(() => {
+    mediaControlsRef.current = {
+      setMicrophoneEnabled: async (enabled: boolean) => {
+        await localParticipant.setMicrophoneEnabled(enabled);
+      },
+      setCameraEnabled: async (enabled: boolean) => {
+        await localParticipant.setCameraEnabled(enabled);
+      },
+    };
+
+    onMediaStateChange({
+      isMicrophoneEnabled: localParticipant.isMicrophoneEnabled,
+      isCameraEnabled: localParticipant.isCameraEnabled,
+    });
+
+    return () => {
+      mediaControlsRef.current = null;
+    };
+  }, [localParticipant, mediaControlsRef, onMediaStateChange]);
 
   const remoteCameraTrack = tracks.find(
     (t) => !t.participant.isLocal && t.source === Track.Source.Camera
@@ -340,10 +673,10 @@ function RoomInner({ matchState, setMatchState, onNext, onChatMessage, sendChatR
 
   if (!isConnected) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-        <div className="text-center space-y-3">
+      <div className="absolute inset-0 flex items-center justify-center bg-slate-950/55 p-4 text-gray-500 backdrop-blur-sm">
+        <div className="w-full max-w-md text-center space-y-4">
           <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mx-auto" />
-          <p className="text-sm">Waiting for a stranger to join...</p>
+          <LiveMatchStatus mode="searching" secondsWaiting={searchSeconds} />
         </div>
       </div>
     );
@@ -362,13 +695,13 @@ function RoomInner({ matchState, setMatchState, onNext, onChatMessage, sendChatR
         </div>
       )}
       {remoteUser && (
-        <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg z-10">
-          <p className="text-xs text-white font-medium">Stranger</p>
-          <p className="text-xs text-gray-300">
-            {remoteUser.name || "Anonymous"} · {remoteInfo?.age || "?"} ·{" "}
-            {remoteInfo?.country || "?"}
-          </p>
-        </div>
+        <ParticipantBadge
+          label="Stranger"
+          name={remoteUser.name || "Anonymous"}
+          age={remoteInfo?.age || "?"}
+          country={remoteInfo?.country || "Unknown"}
+          align="right"
+        />
       )}
     </>
   );

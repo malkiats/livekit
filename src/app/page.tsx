@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
+import LiveMatchStatus from "@/components/LiveMatchStatus";
+import { COUNTRY_OPTIONS, getCountryFlag } from "@/lib/countries";
 
 const ChatRoom = dynamic(() => import("@/components/ChatRoom"), {
   ssr: false,
@@ -85,6 +87,8 @@ export default function Home() {
                 <p className="mt-1 text-sm text-slate-300">Connect with people across countries in a few clicks.</p>
               </div>
             </div>
+
+            <LiveMatchStatus mode="dashboard" className="max-w-2xl" />
           </section>
 
           <section className="rounded-[2rem] border border-white/10 bg-slate-900/75 p-6 shadow-2xl shadow-cyan-950/30 backdrop-blur-xl sm:p-8">
@@ -119,14 +123,26 @@ export default function Home() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-200">Country</label>
-                <input
-                  type="text"
-                  required
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-3 text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  placeholder="Your country"
-                />
+                <div className="relative">
+                  <select
+                    required
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full appearance-none rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-3 pr-12 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="" disabled className="text-slate-400">
+                      Select your country
+                    </option>
+                    {COUNTRY_OPTIONS.map((option) => (
+                      <option key={option.code} value={option.name}>
+                        {`${getCountryFlag(option.name)} ${option.name}`}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-slate-400">
+                    ▾
+                  </span>
+                </div>
               </div>
 
               <div>
