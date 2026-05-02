@@ -181,11 +181,11 @@ export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps)
   const sendChatRef = useRef<((msg: string) => Promise<void>) | null>(null);
   const mediaControlsRef = useRef<MediaControlsRef | null>(null);
 
-  // Start local camera independently — never tears down on match changes
+  // Start local media independently so camera and mic default to on.
   useEffect(() => {
     let cancelled = false;
     navigator.mediaDevices
-      .getUserMedia({ video: true, audio: false })
+      .getUserMedia({ video: true, audio: true })
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -208,6 +208,12 @@ export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps)
       track.enabled = isCameraEnabled;
     });
   }, [isCameraEnabled]);
+
+  useEffect(() => {
+    localStreamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = isMicrophoneEnabled;
+    });
+  }, [isMicrophoneEnabled]);
 
   useEffect(() => {
     if (matchState !== "searching") {

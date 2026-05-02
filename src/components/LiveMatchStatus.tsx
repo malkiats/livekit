@@ -6,7 +6,6 @@ type LiveMatchMode = "dashboard" | "searching" | "connected";
 
 interface LiveStats {
   waitingCount: number;
-  statsScope: string;
 }
 
 interface LiveMatchStatusProps {
@@ -35,7 +34,6 @@ export default function LiveMatchStatus({
 }: LiveMatchStatusProps) {
   const [stats, setStats] = useState<LiveStats>({
     waitingCount: 0,
-    statsScope: "current server instance",
   });
   const [messageIndex, setMessageIndex] = useState(0);
 
@@ -107,17 +105,10 @@ export default function LiveMatchStatus({
         {mode === "connected" ? "You are connected with a new person." : activeMessage}
       </p>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-2xl border border-white/8 bg-slate-950/40 p-3">
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">People waiting</p>
-          <p className="mt-1 text-2xl font-bold text-white">{stats.waitingCount.toLocaleString()}</p>
-          <p className="text-xs text-slate-400">Real-time queue count from this app instance</p>
-        </div>
-        <div className="rounded-2xl border border-white/8 bg-slate-950/40 p-3">
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Stats source</p>
-          <p className="mt-1 text-base font-semibold text-white">{stats.statsScope}</p>
-          <p className="text-xs text-slate-400">No synthetic online totals or fake queue numbers</p>
-        </div>
+      <div className="mt-4 rounded-2xl border border-white/8 bg-slate-950/40 p-3">
+        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">People waiting</p>
+        <p className="mt-1 text-2xl font-bold text-white">{stats.waitingCount.toLocaleString()}</p>
+        <p className="text-xs text-slate-400">Real-time queue count from this app instance</p>
       </div>
     </div>
   );

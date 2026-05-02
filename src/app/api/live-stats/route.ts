@@ -16,7 +16,6 @@ function buildLiveStats() {
 
   return {
     waitingCount,
-    statsScope: "current server instance",
   };
 }
 
