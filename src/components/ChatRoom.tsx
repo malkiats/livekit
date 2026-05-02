@@ -139,7 +139,7 @@ export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps)
     <div className="h-screen flex flex-col bg-gray-950 text-white">
       {/* Header — always stable */}
       <header className="flex items-center justify-between px-4 py-3 bg-gray-900/80 border-b border-gray-800 shrink-0">
-        <h1 className="text-lg font-bold">LiveKit GlobalConnect</h1>
+        <h1 className="text-lg font-bold">VideoLiveChat.live</h1>
         <div className="flex items-center gap-2">
           <span
             className={`inline-block w-2.5 h-2.5 rounded-full ${

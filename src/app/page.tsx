@@ -49,7 +49,7 @@ export default function Home() {
     <main className="min-h-screen flex items-center justify-center bg-gray-950 text-white">
       <div className="w-full max-w-md p-8 rounded-2xl bg-gray-900 shadow-xl">
         <h1 className="text-3xl font-bold text-center mb-2">
-          LiveKit GlobalConnect
+          VideoLiveChat.live
         </h1>
         <p className="text-gray-400 text-center mb-8">
           Anonymous video chat — meet someone new

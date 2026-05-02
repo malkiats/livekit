@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LiveKit GlobalConnect",
+  title: "VideoLiveChat.live",
   description: "Anonymous real-time video chat",
 };
 
