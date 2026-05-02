@@ -320,14 +320,6 @@ function RoomInner({ matchState, setMatchState, onNext, onChatMessage, sendChatR
     prevRemoteCountRef.current = remoteParticipants.length;
   }, [remoteParticipants.length, matchState, onNext]);
 
-  // Auto-retry quickly if no match within 5s
-  useEffect(() => {
-    if (matchState === "searching") {
-      const t = setTimeout(onNext, 5000);
-      return () => clearTimeout(t);
-    }
-  }, [matchState, onNext]);
-
   // Forward incoming remote chat messages to parent
   useEffect(() => {
     const newMsgs = chatMessages.slice(processedMsgCountRef.current);
@@ -351,7 +343,7 @@ function RoomInner({ matchState, setMatchState, onNext, onChatMessage, sendChatR
       <div className="absolute inset-0 flex items-center justify-center text-gray-500">
         <div className="text-center space-y-3">
           <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mx-auto" />
-          <p className="text-sm">Connecting...</p>
+          <p className="text-sm">Waiting for a stranger to join...</p>
         </div>
       </div>
     );
