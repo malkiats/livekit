@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import LiveMatchStatus from "@/components/LiveMatchStatus";
 import { COUNTRY_OPTIONS, getCountryFlag } from "@/lib/countries";
 
 const ChatRoom = dynamic(() => import("@/components/ChatRoom"), {
@@ -66,11 +65,6 @@ export default function Home() {
               <h1 className="max-w-2xl text-4xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl">
                 Meet someone new in seconds - no signup, just click and connect.
               </h1>
-              <p className="max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
-                Jump straight into a real conversation with people around the world.
-                No long setup, no profile building, just a quick start and a human on
-                the other side.
-              </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
@@ -87,8 +81,6 @@ export default function Home() {
                 <p className="mt-1 text-sm text-slate-300">Connect with people across countries in a few clicks.</p>
               </div>
             </div>
-
-            <LiveMatchStatus mode="dashboard" className="max-w-2xl" />
           </section>
 
           <section className="rounded-[2rem] border border-white/10 bg-slate-900/75 p-6 shadow-2xl shadow-cyan-950/30 backdrop-blur-xl sm:p-8">

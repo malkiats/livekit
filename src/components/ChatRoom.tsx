@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import LiveMatchStatus from "@/components/LiveMatchStatus";
 import { getCountryFlag } from "@/lib/countries";
 import {
   LiveKitRoom,
@@ -472,11 +471,6 @@ export default function ChatRoom({ userInfo, serverUrl, onStop }: ChatRoomProps)
               )}
             </div>
           </div>
-
-          <div className="px-2 pb-2">
-            <LiveMatchStatus mode={isConnected ? "connected" : "searching"} secondsWaiting={searchSeconds} />
-          </div>
-
           {/* Controls — always visible */}
           <div className="flex flex-wrap items-center justify-center gap-3 px-4 py-3 shrink-0">
             <button
@@ -544,7 +538,10 @@ function SearchingOverlay({
     <div className="absolute inset-0 flex items-center justify-center bg-slate-950/70 p-4 text-gray-500 backdrop-blur-sm">
       <div className="w-full max-w-md text-center space-y-4">
         <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mx-auto" />
-        <LiveMatchStatus mode="searching" secondsWaiting={searchSeconds} />
+        <div className="rounded-3xl border border-white/10 bg-white/6 p-5 backdrop-blur-xl">
+          <p className="text-lg font-semibold text-white">Searching for {searchSeconds}s...</p>
+          <p className="mt-2 text-sm text-slate-300">Matching you now. Keep this tab open while we find someone.</p>
+        </div>
         {error && (
           <div className="space-y-2">
             <p className="text-red-400 text-xs">{error}</p>
@@ -593,6 +590,7 @@ function RoomInner({
   const { localParticipant } = useLocalParticipant();
   const prevRemoteCountRef = useRef(0);
   const processedMsgCountRef = useRef(0);
+  const didInitializeMediaRef = useRef(false);
 
   // Expose send function to parent via ref
   useEffect(() => {
@@ -625,6 +623,31 @@ function RoomInner({
       mediaControlsRef.current = null;
     };
   }, [localParticipant, mediaControlsRef, onMediaStateChange]);
+
+  useEffect(() => {
+    if (didInitializeMediaRef.current) {
+      return;
+    }
+
+    didInitializeMediaRef.current = true;
+
+    const enableDefaultMedia = async () => {
+      try {
+        await Promise.all([
+          localParticipant.setMicrophoneEnabled(true),
+          localParticipant.setCameraEnabled(true),
+        ]);
+        onMediaStateChange({
+          isMicrophoneEnabled: true,
+          isCameraEnabled: true,
+        });
+      } catch {
+        // Leave browser/device permission failures to the existing UI state.
+      }
+    };
+
+    void enableDefaultMedia();
+  }, [localParticipant, onMediaStateChange]);
 
   const remoteCameraTrack = tracks.find(
     (t) => !t.participant.isLocal && t.source === Track.Source.Camera
@@ -682,7 +705,10 @@ function RoomInner({
       <div className="absolute inset-0 flex items-center justify-center bg-slate-950/55 p-4 text-gray-500 backdrop-blur-sm">
         <div className="w-full max-w-md text-center space-y-4">
           <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mx-auto" />
-          <LiveMatchStatus mode="searching" secondsWaiting={searchSeconds} />
+          <div className="rounded-3xl border border-white/10 bg-white/6 p-5 backdrop-blur-xl">
+            <p className="text-lg font-semibold text-white">Searching for {searchSeconds}s...</p>
+            <p className="mt-2 text-sm text-slate-300">Almost there. We are looking for the next available person.</p>
+          </div>
         </div>
       </div>
     );
